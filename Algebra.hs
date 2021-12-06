@@ -4,7 +4,7 @@ import Data.Array
 import Data.List (stripPrefix, intercalate)
 
 --an element in an algebra
-data AlgebraElement = Alg {unAlg :: Array Int Int}
+data AlgebraElement = Alg {unAlg :: Array Int Int} deriving Eq
 c :: Int -> AlgebraElement
 c n = Alg $ array (0,n) $ (n,1):(zip [0..] $ replicate n 0)
 z n = Alg $ listArray (0, n+1) $ repeat 0

@@ -1,18 +1,11 @@
 import Graph
 import Algebra
-import Data.Array
 
 -- testSumClasses = map sumClasses $ map (map (neighbors cube)) $ neighbors cube 0
 -- [[0],[1,2,3],[5,4,6],[7]]
 -- [[3,2,1],[0,4,6,0,4,5,0,6,5],[7,1,2,7,1,3,7,2,3],[5,6,4]]
 -- [[6,4,5],[1,3,7,1,2,7,2,3,7],[0,4,5,5,0,6,0,4,6],[2,3,1]]
 -- [[7],[4,5,6],[3,1,2],[0]]
-
---complete graphs (simplex skeletons)
-k n = G $ array (0, n-1) $ [(i, [0..i-1] ++ [i+1..n-1]) | i <- [0..n-1]]
-
-cycGraph 2 = k 2
-cycGraph n = G $ array (0, n-1) $ [(i, [(i-1) `mod` n, (i+1) `mod` n]) | i <- [0..n-1]]
 
 tet   = k 4
 
@@ -37,9 +30,19 @@ icos  = wordList ["bcdef",
                   "bfhkl", "bcgil", "cdhjl", "deikl", "efgjl",
                   "ghijk"]
 
---DOES NOT INDUCE AN ALGEBRA
+--the petersen graph is related to the 5-cell (4 simplex) in the following way
+--petersen = complement $ medial $ k 5
 petersen = wordList ["bef", "acg", "bdh", "cei", "adj",
-                     "aih", "bij", "cfg", "dfg", "egh" ]
+                     "aih", "bij", "cfj", "dfg", "egh" ]
+
+--DOES NOT INDUCE AN ALGEBRA
+wagner = wordList ["bdg", "acf", "bdh", "ace", "dfh", "beg", "afh", "ceg"]
+
 pairs [] = []
 pairs [x] = [(x,x)]
 pairs (x:y:xs) = (x,y):pairs xs
+
+powersOf x graph = iterate (times (flowAlg graph) x) (c 0)
+  
+limRat :: Integral a => [a] -> [Double]
+limRat = zipWith (\a b -> fromIntegral b / fromIntegral a) <*> tail
