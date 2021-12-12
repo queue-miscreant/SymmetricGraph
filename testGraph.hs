@@ -1,5 +1,6 @@
 import Graph
 import Algebra
+import Data.Array
 
 -- testSumClasses = map sumClasses $ map (map (neighbors cube)) $ neighbors cube 0
 -- [[0],[1,2,3],[5,4,6],[7]]
@@ -10,10 +11,11 @@ import Algebra
 tet   = k 4
 
 cube  = wordList ["bcd", 
-                  "aeg", "aef", "agf", 
+                  "aeg", "aef", "afg", 
                   "bch", "bdh", "cdh", 
                   "efg"]
 
+--oct = npartite [2,2,2]
 oct   = wordList ["bcde",
                   "acef", "abdf", "acef", "abdf",
                   "bcde"]
@@ -34,15 +36,26 @@ icos  = wordList ["bcdef",
 --petersen = complement $ medial $ k 5
 petersen = wordList ["bef", "acg", "bdh", "cei", "adj",
                      "aih", "bij", "cfj", "dfg", "egh" ]
+--the petersen graph is also the skeleton of the hemi-dodecahedron
+--the hemi-icosahedron is the complete graph K_6
+--the hemi-cube is the complete graph K_4 (i.e., the tetrahedron)
+--the hemi-octahedron is 2 * K_3
 
 --DOES NOT INDUCE AN ALGEBRA
+--a.k.a. 4-mobius ladder
 wagner = wordList ["bdg", "acf", "bdh", "ace", "dfh", "beg", "afh", "ceg"]
 
-pairs [] = []
-pairs [x] = [(x,x)]
-pairs (x:y:xs) = (x,y):pairs xs
+pairs = unzip . pairs' where
+  pairs' [] = []
+  pairs' [x] = [(x,x)]
+  pairs' (x:y:xs) = (x,y):pairs' xs
 
 powersOf x graph = iterate (times (flowAlg graph) x) (c 0)
   
 limRat :: Integral a => [a] -> [Double]
 limRat = zipWith (\a b -> fromIntegral b / fromIntegral a) <*> tail
+
+--compare two graphs by their algebras
+--returns true if both graphs have no algebra
+sameAlg a b = (maybeFlowAlg a) == (maybeFlowAlg b)
+
