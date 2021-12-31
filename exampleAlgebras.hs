@@ -66,3 +66,5 @@ dodec = cayley [C 1 1 .= 3.*c 0 .+ c 2,
 
 --5-cell, the only 4d platonic solid I care to implement
 k5 = cayley [C 1 1 .= 4.*c 0 .+ 3.*c 1]
+
+complex = cayley [C 1 1 .= (-1).*c 0]

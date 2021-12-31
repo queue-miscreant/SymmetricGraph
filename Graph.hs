@@ -3,11 +3,12 @@ module Graph where
 
 import Data.Array
 import Data.Maybe (isJust)
-import Data.List ((\\))
+import Data.List ((\\), nubBy)
 import Control.Monad (foldM)
 import Data.Function (on)
 
 import Algebra
+import Matrix
 
 --representation of a graph as a list of neighbors for node n
 data Graph = G (Array Int [Int]) deriving Show
@@ -28,6 +29,7 @@ npartite xs  = G $ array (0, sum xs - 1) connect where
 --complete bipartite graphs
 bipartite m n = npartite [m,n]
 
+--crown graphs - bipartite graphs which lack a connection to the 'antipodal' node
 crown m = G $ array (0, (2*m-1)) $ [0..m-1] >>= neighbors where
   neighbors x = let (a,b) = unzip [(i+m,i) | i <- [0..m-1], i /= x]
                 in  [(x,a),(x+m,b)]
@@ -36,13 +38,25 @@ crown m = G $ array (0, (2*m-1)) $ [0..m-1] >>= neighbors where
 cycGraph 2 = k 2
 cycGraph n = G $ array (0, n-1) $ [(i, [(i-1) `mod` n, (i+1) `mod` n]) | i <- [0..n-1]]
 
+--path graphs
+path 2 = k 2
+path n = G $ let (G a) = cycGraph n in a // [(0, [1]), (n-1, [n-2])]
+
+--star graphs
+star n = G $ array (0, n-1) $ (0, [1..n-1]):[(i, [0]) | i <- [1..n-1]]
+
 --build neighbor list of words on lowercase letters,
 --treating entries as indexed starting with 'a'
 wordList xs = G $ array (0, xn-1) $ stuff where
   xn    = length xs
   stuff = zip [0..] $ flip map xs $ map (\x -> fromEnum x - fromEnum 'a')
 
+--edgelist
+toEdgeList (G a) = undup $ assocs a >>= (\(x, y) -> map ((,) x) y) where 
+  undup = nubBy (\(x,y) (z,w) -> (x == z && y == w) || (x == w && y == z)) 
+
 --get adjacency matrix for a graph (as neighbor array)
+--TODO: does not work on multigraphs
 toAdjacency (G arr) = zero // zip indices (repeat 1) where
   zero = listArray ((0,0),(ab,ab)) $ repeat 0
   ab = snd $ bounds arr
@@ -51,53 +65,16 @@ toAdjacency (G arr) = zero // zip indices (repeat 1) where
 --convert adjacency matrix to neighbor array
 fromAdjacency arr = G $ listArray (0,ab) neigh where
   ab = snd $ snd $ bounds arr
+  --TODO use Data.Array iteration method
   rows = map (\i -> map ((,) i) [0..ab]) [0..ab]
   neigh = map (>>= (\c@(a,b) -> replicate (arr!c) b)) rows
 
---composition of two arrays by function `f`
-zipWithArr f a b
-  | ab == bb  = array ((0,0),ab) $ zipped
-  | otherwise = error "Array dimension mismatch" where
-    ab@(m,n) = snd $ bounds a
-    bb@(p,q) = snd $ bounds b
-    zipped = map (\[x,y] -> ((x,y), f (a!(x,y)) (b!(x,y)))) $ sequence [[0..m],[0..n]]
-
-plus = zipWithArr (+)
-
---matrix of all 1's
-one n = array ((0,0),(n-1,n-1)) $ map (\[x,y] -> ((x,y), 1)) $ sequence [[0..n-1],[0..n-1]] where
-
---identity matrix
-eye n = array ((0,0),(n-1,n-1)) $ map p $ sequence [[0..n-1],[0..n-1]] where
-  p [x,y] = ((x,y), if x == y then 1 else 0)
-
---tensor product of matrices
-tensor a b = array ((0,0),(s,t)) $ map (\x -> (x, address x)) elements where
-  (m, n) = snd $ bounds a
-  (p, q) = snd $ bounds b
-  (s, t) = ((m+1)*(p+1)-1,(n+1)*(q+1)-1) --new dimensions
-  elements = map (\[a,b] -> (a,b)) $ sequence [[0..s],[0..t]]
-  address (x,y) = a!(x `quot` (p+1), y `quot` (q+1)) * b!(x `rem` (p+1), y `rem` (q+1)) 
-
---direct sum (upper-left tensor a + lower-right tensor b)
-dPlus a b = (ul `tensor` a) `plus` (lr `tensor` b) where
-  ul = listArray ((0,0),(1,1)) $ [1,0,0,0]
-  lr = listArray ((0,0),(1,1)) $ [0,0,0,1]
-
---box product (identity tensor b + a tensor identity)
-box a b = (eye (m+1) `tensor` b) `plus` (a `tensor` eye (p+1)) where
-  (m, n) = snd $ bounds a
-  (p, q) = snd $ bounds b
-
---combine two products with an addition-like operation `p`
---addProd p = liftM2 (\x -> (p . x <*>))
-
---strong product (box plus tensor)
-strong a b = (a `box` b) `plus` (a `tensor` b)
---strong' = addProd plus box tensor
-
 --lift an adjacency matrix operation into one on graphs
 liftG = ((fromAdjacency .) .) . (`on` toAdjacency)
+
+heatmapG = heatmap . toAdjacency
+
+--GRAPH OPERATIONS-------------------------------------------------------------
 
 --tensor product on graphs
 tensorG = liftG tensor
@@ -107,25 +84,6 @@ boxG = liftG box
 strongG = liftG strong
 --direct sum
 dPlusG = liftG dPlus
-
---print grayscale (ansi-escape) heatmap of 2-dim array
-heatmap arr = mapM_ printRow rows where
-  ab = snd $ snd $ bounds arr
-  rows = map (\i -> map ((,) i) [0..ab]) [0..ab]
-  max = maximum arr
-  min' = minimum arr
-  min | min' == max = max - 1
-      | min' < 0    = min'
-      | otherwise   = 0
-  lerp i = ((24*(i - min)) `div` (max - min)) - 1
-  grayscale (-1) = putStr $ "\x1b[40m  "
-  grayscale i    = putStr $ "\x1b[48;5;" ++ show (232 + i) ++ "m  "
-  reset = "\x1b[m\n"
-  printRow tuples = mapM_ (grayscale . lerp . (arr!)) tuples >> putStr reset
-
-heatmapG = heatmap . toAdjacency
-
---GRAPH OPERATIONS-------------------------------------------------------------
 
 symdiff a b = (a \\ b) ++ (b \\ a)
 
@@ -161,16 +119,15 @@ filterFold ret mask (x:xs) = filterFold (unvisited:ret) newMask xs where
 
 --from a particular node (indexed by number), partition nodes into disjoint
 --classes by graph distance
---TODO: check if mask is fixed rather than has visited all nodes
 neighbors (G graph) n = ([n]:) $ neighbors' [n] $ false // [(n, True)] where
   false = listArray (0, gb) $ repeat False
   gb    = snd $ bounds graph
   neighbors' ns arr 
-        | and arr   = [] --all nodes visited
-        | otherwise = layer:neighbors' layer next where
+        | arr == next = [] --mask fixed
+        | otherwise   = layer:neighbors' layer next where
             (layer, next) = filterFold [] arr $ map (graph!) ns
 
---GRPAH "FLOW" OPERATIONS------------------------------------------------------
+--GRAPH "FLOW" OPERATIONS------------------------------------------------------
 
 --sum classes of neighbors together
 sumClasses = sumClasses' [] [] where

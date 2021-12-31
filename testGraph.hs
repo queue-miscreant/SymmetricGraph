@@ -1,6 +1,11 @@
 import Graph
 import Algebra
+import Symmetric
+
 import Data.Array
+
+import System.Process
+import System.Posix.Signals
 
 -- testSumClasses = map sumClasses $ map (map (neighbors cube)) $ neighbors cube 0
 -- [[0],[1,2,3],[5,4,6],[7]]
@@ -10,12 +15,13 @@ import Data.Array
 
 tet   = k 4
 
+-- cube = crown 4
 cube  = wordList ["bcd", 
                   "aeg", "aef", "afg", 
                   "bch", "bdh", "cdh", 
                   "efg"]
 
---oct = npartite [2,2,2]
+-- oct = npartite [2,2,2]
 oct   = wordList ["bcde",
                   "acef", "abdf", "acef", "abdf",
                   "bcde"]
@@ -45,17 +51,40 @@ petersen = wordList ["bef", "acg", "bdh", "cei", "adj",
 --a.k.a. 4-mobius ladder
 wagner = wordList ["bdg", "acf", "bdh", "ace", "dfh", "beg", "afh", "ceg"]
 
-pairs = unzip . pairs' where
-  pairs' [] = []
-  pairs' [x] = [(x,x)]
-  pairs' (x:y:xs) = (x,y):pairs' xs
-
 powersOf x graph = iterate (times (flowAlg graph) x) (c 0)
   
 limRat :: Integral a => [a] -> [Double]
 limRat = zipWith (\a b -> fromIntegral b / fromIntegral a) <*> tail
 
 --compare two graphs by their algebras
---returns true if both graphs have no algebra
-sameAlg a b = (maybeFlowAlg a) == (maybeFlowAlg b)
+--returns false if both graphs have no algebra
+sameAlg a b = maybe False id $ do aa <- maybeFlowAlg a
+                                  ba <- maybeFlowAlg b
+                                  return $ aa == ba
 
+showGraphS   g = "import networkx as nx \n\
+                 \import matplotlib.pyplot as plt \n\
+                 \g = nx.Graph() \n\
+                 \g.add_edges_from(" ++ (show $ toEdgeList g) ++ ") \n\
+                 \nx.draw(g) \n\
+                 \plt.show()"
+
+runPython script = do hand <- spawnCommand $ "python -c '" ++ script ++ "'"
+                      _ <- waitForProcess hand
+                      return ()
+
+showGraph = runPython . showGraphS
+
+pseudoReplS  g = "import networkx as nx \n\
+                 \import sympy \n\
+                 \import matplotlib.pyplot as plt \n\
+                 \g = nx.Graph() \n\
+                 \g.add_edges_from(" ++ (show $ toEdgeList g) ++ ")"
+
+--ignore ctrl-c (which leaves the shell in an unstable state), then bootstrap python repl
+pseudoRepl g = do oldCtrlC <- installHandler sigINT Ignore $ Nothing
+                  let cmd = proc "python" ["-i", "-c", pseudoReplS g]
+                  (_, _, _, hand) <- createProcess cmd
+                  waitForProcess hand
+                  installHandler sigINT oldCtrlC $ Nothing
+                  return ()
