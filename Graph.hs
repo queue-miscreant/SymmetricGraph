@@ -3,6 +3,7 @@ module Graph where
 
 import Data.Array
 import Data.Maybe (isJust)
+import Data.Tuple (swap)
 import Data.List ((\\), nubBy)
 import Control.Monad (foldM)
 import Data.Function (on)
@@ -10,57 +11,37 @@ import Data.Function (on)
 import Algebra
 import Matrix
 
+--why this is left out of Data.List is a mystery
+symdiff a b = (a \\ b) ++ (b \\ a)
+
 --representation of a graph as a list of neighbors for node n
-data Graph = G (Array Int [Int]) deriving Show
+data Graph = G {unG :: Array Int [Int]} deriving Show
 
---complete graphs (simplex skeletons)
-k n = G $ array (0, n-1) $ [(i, [0..i-1] ++ [i+1..n-1]) | i <- [0..n-1]]
+numNodes = length . unG
+numEdges = (`div` 2) . sum . fmap length . unG
 
---complete n-partite graphs
-npartite [x] = k x
-npartite xs  = G $ array (0, sum xs - 1) connect where
-  lb = length xs - 1
-  ls = [0..lb]
-  bounds = listArray (0, lb) $ (zip <*> tail) $ 0:scanl1 (+) xs
-  toList l = let (a,b) = bounds!l in [a..b-1]
-  parts = [(,) (toList l) $ (ls \\ return l) >>= toList | l <- ls]
-  connect = parts >>= (\(a,b) -> map (flip (,) b) a)
+--connect nodes m and n
+addEdge (G a) m n = G $ a // [(m, n:(a!m)), (n, m:(a!n))]
 
---complete bipartite graphs
-bipartite m n = npartite [m,n]
-
---crown graphs - bipartite graphs which lack a connection to the 'antipodal' node
-crown m = G $ array (0, (2*m-1)) $ [0..m-1] >>= neighbors where
-  neighbors x = let (a,b) = unzip [(i+m,i) | i <- [0..m-1], i /= x]
-                in  [(x,a),(x+m,b)]
-
---cycle graphs
-cycGraph 2 = k 2
-cycGraph n = G $ array (0, n-1) $ [(i, [(i-1) `mod` n, (i+1) `mod` n]) | i <- [0..n-1]]
-
---path graphs
-path 2 = k 2
-path n = G $ let (G a) = cycGraph n in a // [(0, [1]), (n-1, [n-2])]
-
---star graphs
-star n = G $ array (0, n-1) $ (0, [1..n-1]):[(i, [0]) | i <- [1..n-1]]
+--remove edge between nodes m and n, if such an edge exists
+removeEdge (G a) m n = G $ a // [(m, (a!m) \\ [n]), (n, (a!n) \\ [m])]
 
 --build neighbor list of words on lowercase letters,
 --treating entries as indexed starting with 'a'
-wordList xs = G $ array (0, xn-1) $ stuff where
+fromWordList xs = G $ array (0, xn-1) $ stuff where
   xn    = length xs
   stuff = zip [0..] $ flip map xs $ map (\x -> fromEnum x - fromEnum 'a')
 
---edgelist
-toEdgeList (G a) = undup $ assocs a >>= (\(x, y) -> map ((,) x) y) where 
-  undup = nubBy (\(x,y) (z,w) -> (x == z && y == w) || (x == w && y == z)) 
+--list of undirected edges, as 2-tuples of initial and terminal vertices
+toEdgeList (G arr) = fst $ foldl removeNode ([], arr) $ indices arr where
+  --for every edge starting from a node, find the terminal end and disconnect
+  removeNode (l, a) i = foldl (removeEdgeFromNode i) (l, a) (a!i)
+  removeEdgeFromNode i (l, a) j = ((i,j):l, a // [(j, (a!j \\ [i]))])
 
---get adjacency matrix for a graph (as neighbor array)
---TODO: does not work on multigraphs
-toAdjacency (G arr) = zero // zip indices (repeat 1) where
-  zero = listArray ((0,0),(ab,ab)) $ repeat 0
-  ab = snd $ bounds arr
-  indices = [0..ab] >>= (\i -> map ((,) i) $ arr!i)
+--get adjacency matrix for an undirected graph (as neighbor array)
+toAdjacency g = foldl ( \a x -> (a // [(x, a!x + 1), (swap x, a!x + 1)]) ) zero' edges where
+  zero' = zero $ numNodes g
+  edges = toEdgeList g
 
 --convert adjacency matrix to neighbor array
 fromAdjacency arr = G $ listArray (0,ab) neigh where
@@ -69,34 +50,44 @@ fromAdjacency arr = G $ listArray (0,ab) neigh where
   rows = map (\i -> map ((,) i) [0..ab]) [0..ab]
   neigh = map (>>= (\c@(a,b) -> replicate (arr!c) b)) rows
 
---lift an adjacency matrix operation into one on graphs
-liftG = ((fromAdjacency .) .) . (`on` toAdjacency)
-
 heatmapG = heatmap . toAdjacency
 
 --GRAPH OPERATIONS-------------------------------------------------------------
 
+--lift an adjacency matrix operation into one on graphs
+liftG = ((fromAdjacency .) .) . (`on` toAdjacency)
+
 --tensor product on graphs
 tensorG = liftG tensor
 --box product on graphs
-boxG = liftG box
+boxG    = liftG box
 --strong product (box plus tensor)
 strongG = liftG strong
 --direct sum
-dPlusG = liftG dPlus
+dPlusG  = liftG dPlus
+--sum
+plusG   = liftG (+)
 
-symdiff a b = (a \\ b) ++ (b \\ a)
+--generate the complement graph
+complement (G arr) = G $ listArray (0, ab) $ map diff [0..ab] where
+  ab = snd $ bounds arr
+  diff vertex = arr!vertex `symdiff` ([0..ab] \\ [vertex])
 
---list of edges, as 2-tuples of initial and terminal vertices
-edges (G arr) = fst $ foldl removeNode ([], arr) ab where
-  ab = [0..(snd $ bounds arr)]
-  removeNode (l, a) i = foldl (removeEdge i) (l, a) (a!i)
-  removeEdge i (l, a) j = ((i,j):l, a // [(j, (a!j \\ [i]))])
+--a somewhat natural graph arithmetic where addition is disjoint union,
+--multiplication is tensor product, and negation is graph complement
+instance Num Graph where
+  (+) = dPlusG
+  (*) = tensorG
+  negate = complement
+
+  abs = undefined
+  signum = undefined
+  fromInteger = undefined
 
 --generate the medial or "line" graph from another graph
 --this is sometimes equivalent to "ambo" in Conway polyhedron notation (planar graphs)
 medial graph = G $ array (0,len-1) $ map neigh edges' where
-  edges' = zip [0..] $ edges graph
+  edges' = zip [0..] $ toEdgeList graph
   len = length edges'
   neigh (n,end) = (n, foldl (populate n end) [] edges')
   populate n end acc (m,end2)
@@ -104,11 +95,6 @@ medial graph = G $ array (0,len-1) $ map neigh edges' where
     | otherwise          = acc
   --TODO: use intermediate array so each edge is unique, even if the pair isn't
   connected (i,j) (k,l) = (i == k || i == l) || (j == k || j == l)
-
---generate the complement graph from another graph
-complement (G arr) = G $ listArray (0, ab) $ map diff [0..ab] where
-  ab = snd $ bounds arr
-  diff vertex = arr!vertex `symdiff` ([0..ab] \\ [vertex])
 
 --accumulate list entries which are "False" in the mask
 --and generate a new mask with those entries set to "True"
@@ -187,3 +173,37 @@ maybeFlowAlg graph
   flow' = zip [0..] $ map (zip [0..] . map (match classes)) alg
   dim = length flow'
   (alg, classes) = flowClasses graph
+
+
+--GRAPH FAMILIES---------------------------------------------------------------
+
+--complete graphs (simplex skeleta)
+k n = G $ array (0, n-1) $ [(i, [0..i-1] ++ [i+1..n-1]) | i <- [0..n-1]]
+
+--complete n-partite graphs
+--when written pointfree and pattern matched, this complains about arity
+npartite xs | null $ tail xs = k $ head xs
+            | otherwise      = negate . foldl1 (+) $ map k xs
+
+--complete bipartite graphs
+bipartite m n = npartite [m,n]
+
+--crown graphs - bipartite graphs which lack a connection to the 'antipodal' node
+crown m = G $ array (0, (2*m-1)) $ [0..m-1] >>= neighbors where
+  neighbors x = let (a,b) = unzip [(i+m,i) | i <- [0..m-1], i /= x]
+                in  [(x,a),(x+m,b)]
+
+--cycle graphs
+cycGraph 2 = k 2
+cycGraph n = G $ array (0, n-1) $ [(i, [(i-1) `mod` n, (i+1) `mod` n]) | i <- [0..n-1]]
+
+--path graphs
+path 1 = k 1
+path 2 = k 2
+path n = G $ let (G a) = cycGraph n in a // [(0, [1]), (n-1, [n-2])]
+
+--star graphs
+star n = G $ array (0, n-1) $ (0, [1..n-1]):[(i, [0]) | i <- [1..n-1]]
+
+--wheel graphs
+wheel n = star n `plusG` (k 1 `dPlusG` cycGraph (n-1))

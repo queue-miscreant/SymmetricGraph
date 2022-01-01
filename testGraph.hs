@@ -16,32 +16,32 @@ import System.Posix.Signals
 tet   = k 4
 
 -- cube = crown 4
-cube  = wordList ["bcd", 
-                  "aeg", "aef", "afg", 
-                  "bch", "bdh", "cdh", 
-                  "efg"]
+cube  = fromWordList ["bcd", 
+                      "aeg", "aef", "afg", 
+                      "bch", "bdh", "cdh", 
+                      "efg"]
 
 -- oct = npartite [2,2,2]
-oct   = wordList ["bcde",
-                  "acef", "abdf", "acef", "abdf",
-                  "bcde"]
+oct   = fromWordList ["bcde",
+                      "acef", "abdf", "acef", "abdf",
+                      "bcde"]
 
-dodec = wordList ["bcd", 
-                  "aef", "agh", "aij",
-                  "bjk", "bgl", "cfm", "cin", "dho", "dep",
-                  "elq", "fkr", "gnr", "hms", "ips", "joq",
-                  "kpt", "lmt", "not",
-                  "qrs"]
+dodec = fromWordList ["bcd", 
+                      "aef", "agh", "aij",
+                      "bjk", "bgl", "cfm", "cin", "dho", "dep",
+                      "elq", "fkr", "gnr", "hms", "ips", "joq",
+                      "kpt", "lmt", "not",
+                      "qrs"]
 
-icos  = wordList ["bcdef", 
-                  "acfgh", "abdhi", "aecij", "adfjk", "abekg",
-                  "bfhkl", "bcgil", "cdhjl", "deikl", "efgjl",
-                  "ghijk"]
+icos  = fromWordList ["bcdef", 
+                      "acfgh", "abdhi", "aecij", "adfjk", "abekg",
+                      "bfhkl", "bcgil", "cdhjl", "deikl", "efgjl",
+                      "ghijk"]
 
 --the petersen graph is related to the 5-cell (4 simplex) in the following way
 --petersen = complement $ medial $ k 5
-petersen = wordList ["bef", "acg", "bdh", "cei", "adj",
-                     "aih", "bij", "cfj", "dfg", "egh" ]
+petersen = fromWordList ["bef", "acg", "bdh", "cei", "adj",
+                         "aih", "bij", "cfj", "dfg", "egh" ]
 --the petersen graph is also the skeleton of the hemi-dodecahedron
 --the hemi-icosahedron is the complete graph K_6
 --the hemi-cube is the complete graph K_4 (i.e., the tetrahedron)
@@ -49,7 +49,7 @@ petersen = wordList ["bef", "acg", "bdh", "cei", "adj",
 
 --DOES NOT INDUCE AN ALGEBRA
 --a.k.a. 4-mobius ladder
-wagner = wordList ["bdg", "acf", "bdh", "ace", "dfh", "beg", "afh", "ceg"]
+wagner = fromWordList ["bdg", "acf", "bdh", "ace", "dfh", "beg", "afh", "ceg"]
 
 powersOf x graph = iterate (times (flowAlg graph) x) (c 0)
   
@@ -82,9 +82,9 @@ pseudoReplS  g = "import networkx as nx \n\
                  \g.add_edges_from(" ++ (show $ toEdgeList g) ++ ")"
 
 --ignore ctrl-c (which leaves the shell in an unstable state), then bootstrap python repl
-pseudoRepl g = do oldCtrlC <- installHandler sigINT Ignore $ Nothing
-                  let cmd = proc "python" ["-i", "-c", pseudoReplS g]
+pseudoRepl g = do let cmd = proc "python" ["-i", "-c", pseudoReplS g]
                   (_, _, _, hand) <- createProcess cmd
+                  oldCtrlC <- installHandler sigINT Ignore $ Nothing
                   waitForProcess hand
                   installHandler sigINT oldCtrlC $ Nothing
                   return ()
