@@ -1,17 +1,13 @@
-import Graph
+--some assorted graphs, with functions for starting up a Python
+--environment with networkx loaded
+
 import Algebra
 import Symmetric
-
-import Data.Array
+import Graph
+import GraphAlg
 
 import System.Process
 import System.Posix.Signals
-
--- testSumClasses = map sumClasses $ map (map (neighbors cube)) $ neighbors cube 0
--- [[0],[1,2,3],[5,4,6],[7]]
--- [[3,2,1],[0,4,6,0,4,5,0,6,5],[7,1,2,7,1,3,7,2,3],[5,6,4]]
--- [[6,4,5],[1,3,7,1,2,7,2,3,7],[0,4,5,5,0,6,0,4,6],[2,3,1]]
--- [[7],[4,5,6],[3,1,2],[0]]
 
 tet   = k 4
 
@@ -42,6 +38,7 @@ icos  = fromWordList ["bcdef",
 --petersen = complement $ medial $ k 5
 petersen = fromWordList ["bef", "acg", "bdh", "cei", "adj",
                          "aih", "bij", "cfj", "dfg", "egh" ]
+
 --the petersen graph is also the skeleton of the hemi-dodecahedron
 --the hemi-icosahedron is the complete graph K_6
 --the hemi-cube is the complete graph K_4 (i.e., the tetrahedron)
@@ -51,17 +48,6 @@ petersen = fromWordList ["bef", "acg", "bdh", "cei", "adj",
 --a.k.a. 4-mobius ladder
 wagner = fromWordList ["bdg", "acf", "bdh", "ace", "dfh", "beg", "afh", "ceg"]
 
-powersOf x graph = iterate (times (flowAlg graph) x) (c 0)
-  
-limRat :: Integral a => [a] -> [Double]
-limRat = zipWith (\a b -> fromIntegral b / fromIntegral a) <*> tail
-
---compare two graphs by their algebras
---returns false if both graphs have no algebra
-sameAlg a b = maybe False id $ do aa <- maybeFlowAlg a
-                                  ba <- maybeFlowAlg b
-                                  return $ aa == ba
-
 showGraphS   g = "import networkx as nx \n\
                  \import matplotlib.pyplot as plt \n\
                  \g = nx.Graph() \n\
@@ -69,7 +55,7 @@ showGraphS   g = "import networkx as nx \n\
                  \nx.draw(g) \n\
                  \plt.show()"
 
-runPython script = do hand <- spawnCommand $ "python -c '" ++ script ++ "'"
+runPython script = do hand <- spawnProcess "python" ["-c", script]
                       _ <- waitForProcess hand
                       return ()
 
