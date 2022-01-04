@@ -1,34 +1,32 @@
+--operations in the interstice of graph theory and abstract algebra
 module GraphAlg where
 --TODO: maybeFlowAlg needs to bind its elements instead of what it currently does
 
 import Data.Array
-import Data.List ((\\))
+import Data.List ((\\), nub)
 import Data.Maybe (isJust)
 import Control.Monad (foldM)
 
 import Graph
 import Algebra
 
-xor True = not
-xor False = id
-
---undirected cayley graph with generating set `basis`
---the generating set is assumed to not contain the identity, if it contains an
+--cayley graph with generating set `basis`
+--the generating set is assumed to not contain the identity, and if it contains an
 --element, also contains its inverse (if it is not an involution)
-cayleyGraph group basis = G $ fixMask false graph $ step basis' where
-  gb    = snd $ snd $ bounds group
-  false = (listArray (0, gb) $ repeat False) // (zip basis' $ repeat True)
-  graph = listArray (0, gb) $ repeat []
-  basis'       = map unX basis
-  step current = [[((x, y), unX $ times group (X x) (X y)) | x <- current] | y <- basis']
+cayleyGraph t basis = fixMask dirNodes (emptyG $ gb+1) $ step basis' where
+  basis'      = map unX basis          --nodes in generating set
+  gb          = snd $ snd $ bounds t   --graph bounds
+  update mask = (mask //) . flip zip (repeat True)   --set indices in the mask to True
+  dirNodes = update (listArray (0, gb) $ repeat False) basis'
+  step nodes = [(x, unX $ times t (X x) y) | x <- nodes, y <- basis]
   fixMask mask acc current
-    | mask == newMask = acc
-    | otherwise       = fixMask newMask newAcc (step next) where
-      --append b to the neighbors of a and vice versa
-      newAcc  = foldr addNeigh acc current
-      addNeigh nodes arr = arr // (concat [[(a, b:arr!a), (b, a:arr!b)] | ((a,_), b) <- nodes, (mask!a) `xor` (mask!b)])
-  
-      (next, newMask) = filterFold [] mask $ map (map snd) current
+    | mask == newMask = newAcc
+    | otherwise       = fixMask newMask newAcc (step $ nub next) where
+      newMask          = update mask next
+      (next, newAcc)   = foldr addNeigh ([], acc) current
+      addNeigh (x,y) (loc, g) 
+        | not $ mask!y = (y:loc, addDirEdge g x y)
+        | otherwise    = (loc, addDirEdge g x y)
 
 --GRAPH "FLOW" OPERATIONS------------------------------------------------------
 
@@ -90,4 +88,3 @@ maybeFlowAlg graph
   flow' = zip [0..] $ map (zip [0..] . map (match classes)) alg
   dim = length flow'
   (alg, classes) = flowClasses graph
-

@@ -64,6 +64,7 @@ showGraph = runPython . showGraphS
 pseudoReplS  g = "import networkx as nx \n\
                  \import sympy \n\
                  \import matplotlib.pyplot as plt \n\
+                 \from compute_spectrum import mult_spectrum\n\
                  \g = nx.Graph() \n\
                  \g.add_edges_from(" ++ (show $ toEdgeList g) ++ ")"
 

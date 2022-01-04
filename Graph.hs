@@ -1,7 +1,8 @@
+--graph theory operations, primarily algebraic ones
 module Graph where
 
 import Data.Array
-import Data.List ((\\))
+import Data.List ((\\), partition, nubBy)
 import Data.Tuple (swap)
 import Data.Function (on)
 
@@ -14,12 +15,25 @@ symdiff a b = (a \\ b) ++ (b \\ a)
 --though this could be used for directed graphs equally as well, many functions assume undirectedness
 data Graph = G {unG :: Array Int [Int]} deriving Show
 
+emptyG n = G $ listArray (0,n-1) $ repeat []
+
+equalUndirected (x,y) (z,w) = (x == z && y == w) || (x == w && y == z)
+
 numNodes = length . unG
 numEdges = (`div` 2) . sum . fmap length . unG
 
 --connect/remove edge between nodes m and n
+addDirEdge (G a) m n = G $ a // [(m, n:(a!m))]
 addEdge (G a) m n = G $ a // [(m, n:(a!m)), (n, m:(a!n))]
+
+removeDirEdge (G a) m n = G $ a // [(m, (a!m) \\ [n])]
 removeEdge (G a) m n = G $ a // [(m, (a!m) \\ [n]), (n, (a!n) \\ [m])]
+
+--remove null nodes
+prune (G a) = G $ array (0, length remaining-1) $ remapped where
+  (removed, remaining) = partition (null . snd) $ assocs a
+  remap i              = i - (sum $ map (fromEnum . (< i) . fst) $ removed)
+  remapped             = [(remap x,map remap y) | (x,y) <- remaining]
 
 --build neighbor list of words on lowercase letters,
 --treating entries as indexed starting with 'a'
@@ -33,10 +47,16 @@ toEdgeList (G arr) = fst $ foldl removeNode ([], arr) $ indices arr where
   removeNode (l, a) i = foldl (removeEdgeFromNode i) (l, a) (a!i)
   removeEdgeFromNode i (l, a) j = ((i,j):l, a // [(j, (a!j \\ [i]))])
 
+--same but in reverse (UNDIRECTED)
+fromEdgeList edges = foldl (\a x -> uncurry (addEdge a) $ x) empty' edges where 
+   empty' = emptyG $ 1 + (maximum $ map (uncurry max) edges)
+
+undirect = fromEdgeList . nubBy equalUndirected . toEdgeList
+
 --get adjacency matrix for an undirected graph (as neighbor array)
-toAdjacency g = foldl ( \a x -> (a // [(x, a!x + 1), (swap x, a!x + 1)]) ) zero' edges where
-  zero' = zero $ numNodes g
-  edges = toEdgeList g
+toAdjacency g = adjacencyFromEdgeList (numNodes g) (toEdgeList g)
+
+adjacencyFromEdgeList n = foldl ( \a x -> (a // [(x, a!x + 1), (swap x, a!x + 1)]) ) (zero n)
 
 --convert adjacency matrix to neighbor array
 fromAdjacency arr = G $ listArray (0,ab) neigh where
@@ -115,16 +135,16 @@ crown m = G $ array (0, (2*m-1)) $ [0..m-1] >>= neighbors where
                 in  [(x,a),(x+m,b)]
 
 --cycle graphs
-cycGraph 2 = k 2
-cycGraph n = G $ array (0, n-1) $ [(i, [(i-1) `mod` n, (i+1) `mod` n]) | i <- [0..n-1]]
+cycleG 2 = k 2
+cycleG n = G $ array (0, n-1) $ [(i, [(i-1) `mod` n, (i+1) `mod` n]) | i <- [0..n-1]]
 
 --path graphs
 path 1 = k 1
 path 2 = k 2
-path n = G $ let (G a) = cycGraph n in a // [(0, [1]), (n-1, [n-2])]
+path n = G $ let (G a) = cycleG n in a // [(0, [1]), (n-1, [n-2])]
 
 --star graphs
 star n = G $ array (0, n-1) $ (0, [1..n-1]):[(i, [0]) | i <- [1..n-1]]
 
 --wheel graphs
-wheel n = star n `plusG` (k 1 `dPlusG` cycGraph (n-1))
+wheel n = star n `plusG` (k 1 `dPlusG` cycleG (n-1))

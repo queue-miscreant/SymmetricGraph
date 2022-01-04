@@ -1,7 +1,9 @@
+--operations on the symmetric group
 module Symmetric where
 
 import Data.List
 import Data.Array
+import Data.Maybe
 import qualified Data.Set
 import Control.Monad (foldM)
 
@@ -10,16 +12,26 @@ import Graph
 import GraphAlg
 
 --all permutations of the set [1..x]
+--plain changes without the reversing
+{-
 permutation x = permute [1..x] where
   permute [x]    = [[x]]
   permute (x:xs) = concat [reinsert x p | p <- permute xs]
   reinsert y ys  = [(\(a,b) c -> a ++ (c:b)) (splitAt z ys) y | z <- [0..(length ys)]]
+-}
+
+plainChanges n = change n where 
+  change 1 = [[1]]
+  change n = concat $ zipWith (drag n) (cycle [reverse, id]) $ change $ n-1
+  drag n f x  = f [let (a,b) = splitAt m x in a ++ (n:b) | m <- [0..n-1]]
+--permutation n = permutations [1..n]
+permutation = plainChanges
 
 --apply one permutation over another (1-based)
 --since the symmetric group grows so quickly, efficiency can be disregarded
 apply xs = map ((xs !!) . (+(-1)))
 
-data Perm = Perm {unPerm :: [Int]}
+data Perm = Perm {unPerm :: [Int]} --not deriving eq, since it can be difficult to tell
 
 instance Semigroup Perm where
   (<>) (Perm xs) (Perm ys) = Perm $ case lxs `compare` lys of {
@@ -70,6 +82,11 @@ graphSwaps (G a) = map (read . show) swaps where
   ab         = snd $ bounds a
   swaps      = assocs a >>= (\(x, ys) -> map ((,) (x+1) . (+1)) ys)
 
+inverse (Perm xs) = Perm $ map ((+1) . fromJust . (`findIndex` xs) . (==)) [1..length xs]
+
+evenperms n = nubBy (\x y -> unPerm x == unPerm y) $ [a <> (b <> (inverse a <> inverse b)) | a <- p n, b <- p n] where
+  p = map Perm . permutation
+
 --ALGEBRAIC OPERATIONS----------------------------------------------------------
 
 --pair of array containing every permutation of order n and
@@ -90,12 +107,16 @@ symmetric' n = (lookup, unlookup, cayleyGrp products) where
 --symmetric group of order n cayley table
 symmetric = (\(_,_,cayley) -> cayley) . symmetric' where
 
+--convert permutation to purely algebraic representation in S_n
+toAlgebra' from n = nub . map (from . unPerm . (Perm [1..n] <>))
+toAlgebra n = let (_, from) = toFromSym n in toAlgebra' from n
+
 --derived cayley graph on symmetric group from a "swap" graph
 --beware that 8 nodes is too many!
 derivedCayley g@(G a) = cayleyGraph cayley generators where
   ab                = snd $ bounds a
   (_, from, cayley) = symmetric' $ ab+1
-  generators        = nub $ map (from . unPerm . (Perm [1..ab+1] <>)) $ graphSwaps g
+  generators        = toAlgebra' from (ab+1) $ graphSwaps g
 
 --number of nodes at distance n from the identity in the derived symmetric group cayley graph
 derivedDClasses = map length . flip neighbors 0 . derivedCayley
