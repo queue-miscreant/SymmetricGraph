@@ -51,8 +51,7 @@ tensor a b = arrayRange address ((0,0),(s,t)) where
   (s, t) = ((m+1)*(p+1)-1,(n+1)*(q+1)-1) --new dimensions
   address (x,y) = a!(x `quot` (p+1), y `quot` (q+1)) * b!(x `rem` (p+1), y `rem` (q+1)) 
 
---box product (identity tensor b + a tensor identity)
---only valid for square matrices
+--box product (identity tensor b + a tensor identity) on square matrices
 box :: Num a => Matrix a -> Matrix a -> Matrix a
 box a b = (eye (m+1) `tensor` b) + (a `tensor` eye (p+1)) where
   (m, n) = snd $ bounds a

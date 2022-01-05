@@ -1,18 +1,50 @@
+{-# LANGUAGE BangPatterns#-}
 --operations in the interstice of graph theory and abstract algebra
 module GraphAlg where
 --TODO: maybeFlowAlg needs to bind its elements instead of what it currently does
 
 import Data.Array
+import Data.Array.ST
+import Control.Monad.ST
+
 import Data.List ((\\), nub)
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, catMaybes)
 import Control.Monad (foldM)
 
 import Graph
 import Algebra
 
 --cayley graph with generating set `basis`
---the generating set is assumed to not contain the identity, and if it contains an
---element, also contains its inverse (if it is not an involution)
+--the generating set is assumed to not contain the identity
+cayleyGraph' :: (GroupElement -> GroupElement -> GroupElement) -> Int -> [GroupElement] -> Graph
+cayleyGraph' xx n basis 
+  = G $ runSTArray $ do !graph <- thaw $ unG $ emptyG n
+                        !mask  <- newArray (0, n-1) False :: ST s (STArray s Int Bool)
+
+                        let basis' = map unX basis
+                        let step nodes = [(x, unX $ (X x) `xx` y) | x <- nodes, y <- basis]
+                        let updateMask = mapM_ (\x -> writeArray mask x True)
+                        updateMask basis'
+
+                        let fixMask cNodes
+                              = do next <- mapM (\(m,n) -> do neigh <- readArray graph m
+                                                              writeArray graph m $ n:neigh
+                                                              visited <- readArray mask n
+                                                              return $ if not visited
+                                                                       then Just n
+                                                                       else Nothing) cNodes
+                                   let next' = catMaybes next
+                                   updateMask next'
+                                   if null next'
+                                   then return graph
+                                   else fixMask $ step $ nub next'
+                        fixMask $ step basis'
+
+cayleyGraph :: CayleyTable GroupElement -> [GroupElement] -> Graph
+cayleyGraph t = cayleyGraph' (times t) (1 + (snd $ snd $ bounds t))
+
+{--cayley graph with generating set `basis`
+--the generating set is assumed to not contain the identity
 cayleyGraph t basis = fixMask dirNodes (emptyG $ gb+1) $ step basis' where
   basis'      = map unX basis          --nodes in generating set
   gb          = snd $ snd $ bounds t   --graph bounds
@@ -27,6 +59,7 @@ cayleyGraph t basis = fixMask dirNodes (emptyG $ gb+1) $ step basis' where
       addNeigh (x,y) (loc, g) 
         | not $ mask!y = (y:loc, addDirEdge g x y)
         | otherwise    = (loc, addDirEdge g x y)
+-}
 
 --GRAPH "FLOW" OPERATIONS------------------------------------------------------
 

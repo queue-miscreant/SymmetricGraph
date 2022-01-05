@@ -2,14 +2,22 @@
 module Graph where
 
 import Data.Array
+import Data.Array.ST
+
 import Data.List ((\\), partition, nubBy)
 import Data.Tuple (swap)
 import Data.Function (on)
+
+import Control.Monad
+import Control.Monad.ST
 
 import Matrix
 
 --why this is left out of Data.List is a mystery
 symdiff a b = (a \\ b) ++ (b \\ a)
+
+edgeUndirEq   (x,y) (z,w) = (x == z && y == w) || (x == w && y == z)
+edgeConnected (i,j) (k,l) = (i == k || i == l) || (j == k || j == l)
 
 --representation of a (undirected) graph as a list of neighbors for node n
 --though this could be used for directed graphs equally as well, many functions assume undirectedness
@@ -17,10 +25,9 @@ data Graph = G {unG :: Array Int [Int]} deriving Show
 
 emptyG n = G $ listArray (0,n-1) $ repeat []
 
-equalUndirected (x,y) (z,w) = (x == z && y == w) || (x == w && y == z)
-
 numNodes = length . unG
-numEdges = (`div` 2) . sum . fmap length . unG
+numDirEdges = sum . fmap length . unG
+numEdges = (`div` 2) . numDirEdges . undirect
 
 --connect/remove edge between nodes m and n
 addDirEdge (G a) m n = G $ a // [(m, n:(a!m))]
@@ -29,7 +36,7 @@ addEdge (G a) m n = G $ a // [(m, n:(a!m)), (n, m:(a!n))]
 removeDirEdge (G a) m n = G $ a // [(m, (a!m) \\ [n])]
 removeEdge (G a) m n = G $ a // [(m, (a!m) \\ [n]), (n, (a!n) \\ [m])]
 
---remove null nodes
+--remove totally unconnected nodes
 prune (G a) = G $ array (0, length remaining-1) $ remapped where
   (removed, remaining) = partition (null . snd) $ assocs a
   remap i              = i - (sum $ map (fromEnum . (< i) . fst) $ removed)
@@ -41,27 +48,53 @@ fromWordList xs = G $ array (0, xn-1) $ stuff where
   xn    = length xs
   stuff = zip [0..] $ flip map xs $ map (\x -> fromEnum x - fromEnum 'a')
 
---list of undirected edges, as 2-tuples of initial and terminal vertices
-toEdgeList (G arr) = fst $ foldl removeNode ([], arr) $ indices arr where
-  --for every edge starting from a node, find the terminal end and disconnect
-  removeNode (l, a) i = foldl (removeEdgeFromNode i) (l, a) (a!i)
-  removeEdgeFromNode i (l, a) j = ((i,j):l, a // [(j, (a!j \\ [i]))])
+--list of directed edges, as 2-tuples of initial and terminal vertices
+toDirEdgeList (G arr) = concat $ snd $ foldl neighToEdges (0, []) arr where 
+  neighToEdges (n, l) x = (n+1, (:l) $ map ((,) n) x)
 
---same but in reverse (UNDIRECTED)
+--list of undirected edges, as unordered pairs of vertices
+toEdgeList (G arr) = concat $ runST $ do 
+  graph <- thaw arr :: ST s (STArray s Int [Int])
+  --remove nodes from the graph as we read across its array
+  forM (indices arr) (across graph)
+    where across graph x = do 
+            neighbors <- readArray graph x
+            forM_ neighbors (remove graph x)
+            return $ map ((,) x) neighbors
+          remove :: (STArray s Int [Int]) -> Int -> Int -> ST s ()
+          remove graph x y = do 
+            coneighbors <- readArray graph y
+            writeArray graph y (coneighbors \\ [x])
+
+toEdgeList' = nubBy edgeUndirEq . toDirEdgeList
+
+--convert (undirected) edge list to graph
 fromEdgeList edges = foldl (\a x -> uncurry (addEdge a) $ x) empty' edges where 
    empty' = emptyG $ 1 + (maximum $ map (uncurry max) edges)
 
-undirect = fromEdgeList . nubBy equalUndirected . toEdgeList
+--convert directed edge list to graph
+fromDirEdgeList edges = foldl (\a x -> uncurry (addDirEdge a) $ x) empty' edges where 
+   empty' = emptyG $ 1 + (maximum $ map (uncurry max) edges)
+
+undirect = fromEdgeList . toEdgeList
+
+--for really big graphs, using mutable arrays is mandatory
+adjacencyFromEdgeList n xs 
+  = runSTArray $ do arr <- thaw $ zero n
+                    forM_ xs (\x -> do cur <- readArray arr x
+                                       writeArray arr x (cur+1))
+                    return arr
 
 --get adjacency matrix for an undirected graph (as neighbor array)
-toAdjacency g = adjacencyFromEdgeList (numNodes g) (toEdgeList g)
+toAdjacency g = adjacencyFromEdgeList (numNodes g) (toDirEdgeList g)
 
-adjacencyFromEdgeList n = foldl ( \a x -> (a // [(x, a!x + 1), (swap x, a!x + 1)]) ) (zero n)
+toAdjacencyUndirected g
+  = adjacencyFromEdgeList (numNodes g) $ concat $ [[edge, swap edge] | edge <- toEdgeList g]
 
 --convert adjacency matrix to neighbor array
 fromAdjacency arr = G $ listArray (0,ab) neigh where
-  ab = snd $ snd $ bounds arr
-  rows = [[(m,n) | n <- [0..ab]] | m <- [0..ab]]
+  ab    = snd $ snd $ bounds arr
+  rows  = [[(m,n) | n <- [0..ab]] | m <- [0..ab]]
   neigh = map (>>= (\c@(a,b) -> replicate (arr!c) b)) rows
 
 heatmapG = heatmap . toAdjacency
@@ -94,10 +127,9 @@ medial graph = G $ array (0,len-1) $ map neigh edges' where
   len = length edges'
   neigh (n,end) = (n, foldl (populate n end) [] edges')
   populate n end acc (m,end2)
-    | m /= n && connected end end2 = m:acc
-    | otherwise          = acc
+    | m /= n && edgeConnected end end2 = m:acc
+    | otherwise                        = acc
   --TODO: use intermediate array so each edge is unique, even if the pair isn't
-  connected (i,j) (k,l) = (i == k || i == l) || (j == k || j == l)
 
 --accumulate list entries which are "False" in the mask
 --and generate a new mask with those entries set to "True"
@@ -108,13 +140,13 @@ filterFold ret mask (x:xs) = filterFold (unvisited:ret) newMask xs where
 
 --from a particular node (indexed by number), partition nodes into disjoint
 --classes by graph distance
-neighbors (G graph) n = ([n]:) $ neighbors' [n] $ false // [(n, True)] where
-  false = listArray (0, gb) $ repeat False
+neighbors (G graph) n = ([n]:) $ neighbors' [n] mask where
+  mask = (listArray (0, gb) $ repeat False) // [(n, True)]
   gb    = snd $ bounds graph
-  neighbors' ns arr 
-        | arr == next = [] --mask fixed
-        | otherwise   = layer:neighbors' layer next where
-            (layer, next) = filterFold [] arr $ map (graph!) ns
+  neighbors' ns mask 
+        | mask == next = [] --mask fixed
+        | otherwise    = layer:neighbors' layer next where
+            (layer, next) = filterFold [] mask $ map (graph!) ns
 
 --GRAPH FAMILIES---------------------------------------------------------------
 
