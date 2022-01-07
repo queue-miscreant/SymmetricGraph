@@ -28,8 +28,8 @@ plainChanges n = change n where
   change 1 = [[1]]
   change n = concat $ zipWith (drag n) (cycle [reverse, id]) $ change $ n-1
   drag n f x  = f [let (a,b) = splitAt m x in a ++ (n:b) | m <- [0..n-1]]
---permutation n = permutations [1..n]
-permutation = plainChanges
+permutation n = permutations [1..n]
+--permutation = plainChanges
 
 --apply one permutation over another (1-based)
 --since the symmetric group grows so quickly, efficiency can be disregarded

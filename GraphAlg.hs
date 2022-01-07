@@ -18,7 +18,7 @@ import Algebra
 --the generating set is assumed to not contain the identity
 cayleyGraph' :: (GroupElement -> GroupElement -> GroupElement) -> Int -> [GroupElement] -> Graph
 cayleyGraph' xx n basis 
-  = G $ runSTArray $ do !graph <- thaw $ unG $ emptyG n
+  = G $ runSTArray $ do !graph <- newArray (0, n-1) []
                         !mask  <- newArray (0, n-1) False :: ST s (STArray s Int Bool)
 
                         let basis' = map unX basis

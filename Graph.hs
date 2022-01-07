@@ -3,8 +3,10 @@ module Graph where
 
 import Data.Array
 import Data.Array.ST
+import Data.STRef
 
-import Data.List ((\\), partition, nubBy)
+import Data.Maybe (catMaybes)
+import Data.List ((\\), partition, nubBy, nub, intersect)
 import Data.Tuple (swap)
 import Data.Function (on)
 
@@ -13,11 +15,16 @@ import Control.Monad.ST
 
 import Matrix
 
+data EdgeTo = LeftEdge | RightEdge | UndirEdge
+
 --why this is left out of Data.List is a mystery
 symdiff a b = (a \\ b) ++ (b \\ a)
 
 edgeUndirEq   (x,y) (z,w) = (x == z && y == w) || (x == w && y == z)
 edgeConnected (i,j) (k,l) = (i == k || i == l) || (j == k || j == l)
+
+--square bounds
+squareB (s, e) = ((s,s),(e,e))
 
 --representation of a (undirected) graph as a list of neighbors for node n
 --though this could be used for directed graphs equally as well, many functions assume undirectedness
@@ -35,6 +42,15 @@ addEdge (G a) m n = G $ a // [(m, n:(a!m)), (n, m:(a!n))]
 
 removeDirEdge (G a) m n = G $ a // [(m, (a!m) \\ [n])]
 removeEdge (G a) m n = G $ a // [(m, (a!m) \\ [n]), (n, (a!n) \\ [m])]
+
+edgeBetween (G a) m n = n `elem` a!m
+dirEdgeBetween (G a) m n
+  | right && left = Just UndirEdge
+  | left          = Just LeftEdge
+  | right         = Just RightEdge
+  | otherwise     = Nothing
+   where right = n `elem` a!m
+         left  = m `elem` a!n
 
 --remove totally unconnected nodes
 prune (G a) = G $ array (0, length remaining-1) $ remapped where
@@ -80,7 +96,7 @@ undirect = fromEdgeList . toEdgeList
 
 --for really big graphs, using mutable arrays is mandatory
 adjacencyFromEdgeList n xs 
-  = runSTArray $ do arr <- thaw $ zero n
+  = runSTArray $ do arr <- newArray ((0,0), (n-1, n-1)) 0
                     forM_ xs (\x -> do cur <- readArray arr x
                                        writeArray arr x (cur+1))
                     return arr
@@ -129,24 +145,78 @@ medial graph = G $ array (0,len-1) $ map neigh edges' where
   populate n end acc (m,end2)
     | m /= n && edgeConnected end end2 = m:acc
     | otherwise                        = acc
-  --TODO: use intermediate array so each edge is unique, even if the pair isn't
 
---accumulate list entries which are "False" in the mask
---and generate a new mask with those entries set to "True"
+--accumulate list entries which are "True" in the mask
+--and generate a new mask with those entries set to "False"
 filterFold ret mask []     = (concat ret, mask)
 filterFold ret mask (x:xs) = filterFold (unvisited:ret) newMask xs where
-  unvisited = filter (not . (mask!)) x
-  newMask   = mask // (zip unvisited $ repeat True)
+  unvisited = filter (mask!) x
+  newMask   = mask // (zip unvisited $ repeat False)
 
 --from a particular node (indexed by number), partition nodes into disjoint
 --classes by graph distance
 neighbors (G graph) n = ([n]:) $ neighbors' [n] mask where
-  mask = (listArray (0, gb) $ repeat False) // [(n, True)]
-  gb    = snd $ bounds graph
+  mask = (listArray (bounds graph) $ repeat True) // [(n, False)]
   neighbors' ns mask 
-        | mask == next = [] --mask fixed
-        | otherwise    = layer:neighbors' layer next where
+        | null layer = [] --mask fixed
+        | otherwise  = layer:neighbors' layer next where
             (layer, next) = filterFold [] mask $ map (graph!) ns
+
+{-
+--from a particular node (indexed by number), partition nodes into disjoint
+--classes by graph distance
+--unoptimized, this performs worse than `neighbors` above
+--and even when optimized, is only marginally better
+neighborsST (G graph) n = reverse $ runST $ do 
+  mask <- newArray (bounds graph) True :: ST s (STUArray s Int Bool)
+  writeArray mask n False
+
+  ret <- newSTRef [[n]]
+  let neighbors' = filterM (\y -> do 
+          y' <- readArray mask y 
+          if y'
+          then writeArray mask y False >> return True
+          else return False
+        ) . concatMap (graph!)
+  let go ns = do 
+      lay <- neighbors' ns
+      if null lay
+      then return ()
+      else (modifySTRef ret (lay:)) >> go lay
+
+  go [n]
+  readSTRef ret
+-}
+
+allEqual []     = True
+allEqual (x:xs) = all (==x) xs
+
+--oh no, not another n^2
+sharedEach p (G arr)
+  | allEqual ret = Right $ if null ret then 0 else head ret
+  | otherwise    = Left $ nub $ ret where
+    ret = do 
+      i@(m,n) <- range $ squareB (bounds arr)
+      guard $ m < n
+      guard $ p arr m n
+      let intersection = (arr!m) `intersect` (arr!n)
+      return $ length intersection
+
+sharedAdjacent = sharedEach (\a m n -> n `elem` a!m)
+sharedNonAdjacent = sharedEach (\a m n -> not $ n `elem` a!m)
+
+--tests if g is a strongly regular graph
+--Right (lambda, mu) values are strongly regular,
+--Left (list of lambdas, list of mus) values are weakly regular
+regularity g = case adj of  {
+  Left adj' -> case nonadj of {
+    Left nonadj'  -> Left (adj', nonadj');
+    Right nonadj' -> Left (adj', [nonadj']); };
+  Right adj' -> case nonadj of {
+    Left nonadj'  -> Left  ([adj'], nonadj');
+    Right nonadj' -> Right (adj', nonadj') } } where
+      adj = sharedAdjacent g
+      nonadj = sharedNonAdjacent g
 
 --GRAPH FAMILIES---------------------------------------------------------------
 
