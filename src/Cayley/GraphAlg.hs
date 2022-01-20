@@ -1,20 +1,21 @@
 {-# LANGUAGE BangPatterns#-}
 --operations in the interstice of graph theory and abstract algebra
-module GraphAlg where
+module Cayley.GraphAlg where
 
-import Data.Graph
-import Data.Array
-import Data.Array.ST
+import Control.Monad (forM)
 import Control.Monad.ST
 
 import Data.List ((\\), nub, findIndex)
 import Data.Maybe (fromJust, catMaybes)
 import Data.Ratio
-import Control.Monad (forM)
 
-import Graph
-import Algebra
-import Symmetric 
+import Data.Graph
+import Data.Array
+import Data.Array.ST
+
+import Cayley.Graph
+import Cayley.Algebra
+import Cayley.Symmetric 
 
 --CAYLEY GRAPHS----------------------------------------------------------------
 
@@ -70,14 +71,17 @@ cayleyGraph t basis = fixMask dirNodes (emptyG $ gb+1) $ step basis' where
 -}
 
 -- cayley graph based on a generating set of permutations
+cayleyPGraph' :: Int -> [Perm] -> Graph
 cayleyPGraph' n = cayleyGraph algebra (product [1..n]) . toAlgebra' unlookup n where
   (!lookup, unlookup)     = toFromSym n
   algebra (X el1) (X el2) = unlookup $ unPerm $ (Perm $ lookup!el2) <> (Perm $ lookup!el1)
 
+cayleyPGraph :: [Perm] -> Graph
 cayleyPGraph xs = cayleyPGraph' ( maximum (map (length . unPerm) xs) ) xs
 
 -- generate the subgroup before producing a pruned cayley graph
 -- may take longer than cayleyPGraph
+cayleyPGraphPruned :: [Perm] -> Graph
 cayleyPGraphPruned xs = cayleyGraph algebra (length lookup) $ map unlookup xs where
   (!lookup, unlookup)     = toFromPerm xs
   algebra (X el1) (X el2) = unlookup $ (lookup!el2) <> (lookup!el1)
@@ -90,6 +94,7 @@ graphSwaps gr = map (read . show) $ nub swaps where
 
 -- symmetric group cayley graph from a "swap" graph
 -- beware that 9 nodes is too many!
+factorialG :: Graph -> Graph
 factorialG gr = cayleyPGraph' (ab+1) generators where
   !generators = graphSwaps gr
   ab          = snd $ bounds gr
@@ -99,7 +104,7 @@ factorialG gr = cayleyPGraph' (ab+1) generators where
 -- from a node, find all possible n-distance 2 step walks
 -- ((alg !! x) !! y) represents all nodes achieved by taking one step of length x and another of length y
 flow' :: Graph -> Int -> ([[Vertex]], [[[Vertex]]])
-flow' n gr = (classes, alg) where
+flow' gr n = (classes, alg) where
   -- neighbors of each node
   nodeN = listArray (bounds gr) $ map (neighbors gr) $ indices gr
   classes = nodeN!n

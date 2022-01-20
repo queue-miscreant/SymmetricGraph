@@ -1,3 +1,0 @@
-import SymOut
-
-main = writeAdj

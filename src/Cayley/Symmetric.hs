@@ -1,45 +1,47 @@
 {-# LANGUAGE BangPatterns #-}
 --operations on the symmetric group
-module Symmetric where
+module Cayley.Symmetric where
+
+import Control.Monad (foldM)
 
 import Data.List
-import Data.Graph
 import Data.Array
-import Data.Array.ST
+import Data.Graph
 
 import Data.Maybe
 import qualified Data.Set
-import Control.Monad (foldM)
 
-import Algebra
-import Graph
+import Cayley.Algebra
+import Cayley.Graph
 
 --enumerate all permutations of order n by plain changes
---TODO: better?
-plainChanges n = change n where 
-  change 1 = [[1]]
-  change n = concat $ zipWith (drag n) (cycle [reverse, id]) $ change $ n-1
+--TODO: do this better better?
+plainChanges :: Int -> [[Int]]
+plainChanges 1 = [[1]]
+plainChanges n = concat $ zipWith (drag n) (cycle [reverse, id]) $ plainChanges $ n-1 where
   drag n f x  = f [let (a,b) = splitAt m x in a ++ (n:b) | m <- [0..n-1]]
+
+permutation :: Int -> [[Int]]
 --permutation n = permutations [1..n]
 permutation = plainChanges
 
+--destination of an index according to a permutation
+applyOne :: [Int] -> Int -> Int
 applyOne xs = ((xs !!) . (+(-1)))
+
 --apply one permutation over another (1-based)
---since the symmetric group grows so quickly, efficiency can be disregarded
+--disregarding efficiency since the symmetric group grows so quickly
+apply :: [Int] -> [Int] -> [Int]
 apply xs = map (applyOne xs)
 
-data Perm = Perm {unPerm :: [Int]} --not deriving eq, since it can be difficult to tell
+--SYMMETRIC GROUP ELEMENT OPERATIONS--------------------------------------------
 
-inverse' (Perm xs) = Perm $ map ((+1) . fromJust . (`findIndex` xs) . (==)) [1..length xs]
+--permutations, invariant w.r.t. length of underlying list, supporting natural
+--monoidal composition and displaying as cycle notation
+data Perm = Perm {unPerm :: [Int]}
 
-symmetric = map Perm . permutation
-
-derivedGroup ps = nubBy (\x y -> unPerm x == unPerm y) [a <> (b <> (inverse a <> inverse b)) | a <- ps, b <- ps] 
-
---alternating group 
-alternating = derivedGroup . symmetric
-
---extract a list of cycles from a Perm object
+--extract a list of cycles from a Perm
+extractCycles :: Perm -> [[Int]]
 extractCycles (Perm xs) = extractCycles' Data.Set.empty 1 where 
   navCycle n xs = n:(takeWhile (/=n) $ tail $ iterate (applyOne xs) n)
   lx = length xs
@@ -53,6 +55,7 @@ extractCycles (Perm xs) = extractCycles' Data.Set.empty 1 where
 
 --build a permutation from a list of (reversed) cycles
 --for example, permFromCycles [[1,2,3]] = (3 2 1) rather than (1 2 3)
+permFromRevCycles :: [[Int]] -> Perm
 permFromRevCycles = Perm . buildList where
   --build result
   buildList [] = [1]
@@ -62,9 +65,29 @@ permFromRevCycles = Perm . buildList where
   applyCycle s (x1:x2:xs) ys = applyCycle s (x2:xs) $ rejoin x1 $ splitAt (x2 - 1) ys
   rejoin n (xs, ys) = xs ++ n:tail ys
 
-inverse = permFromRevCycles . extractCycles
+--inversePerm :: Perm -> Perm
+--inversePerm = permFromRevCycles . extractCycles
+
+--invert a permutation
+inversePerm :: Perm -> Perm
+inversePerm (Perm xs) = Perm $ map ((+1) . fromJust . (`findIndex` xs) . (==)) [1..length xs]
+
+--symmetric group of a particular order, as a list of permutation objects
+symmetric :: Int -> [Perm]
+symmetric = map Perm . permutation
+
+--derived subgroup of a list of permutations
+--remember that not all derived series terminate in the trivial group
+derivedGroup :: [Perm] -> [Perm]
+derivedGroup ps = nub [commutator a b | a <- ps, b <- ps] where 
+  commutator a b = a <> (b <> (inversePerm a <> inversePerm b))
+
+--alternating group 
+alternating :: Int -> [Perm]
+alternating = derivedGroup . symmetric
 
 --normalize lengths to the longer of two lists
+normalizePair :: [Int] -> [Int] -> ([Int], [Int])
 normalizePair xs ys = case lx `compare` ly of {
     GT -> (xs, ys ++ [ly+1..lx]);
     LT -> ((xs ++ [lx+1..ly]), ys);
@@ -101,9 +124,11 @@ instance Read Perm where
 
 --apply a string of cycles over another string of cycles
 --effectively lifts `apply` to strings of cycles
+app :: String -> String -> String
 app a b = show $ (read a <> read b :: Perm)
 
 --run generating set `xs`, producing all members of a subgroup
+generatingSet :: [Perm] -> [Perm]
 generatingSet xs = fixList xs xs where 
   fixList ss ys
     | ss == ss' = ss' 
@@ -111,6 +136,8 @@ generatingSet xs = fixList xs xs where
         ss'     = ss `union` advance
         advance = nub $ (<>) <$> xs <*> ys 
 
+--enumeration of the group formed by the generating set `xs`
+generatingTable :: [Perm] -> Array Int Perm
 generatingTable xs = listArray (0,n-1) $ (Perm [1,2]):noId gset where
   n = length gset
   gset = generatingSet xs
@@ -118,18 +145,27 @@ generatingTable xs = listArray (0,n-1) $ (Perm [1,2]):noId gset where
 
 --ALGEBRAIC OPERATIONS----------------------------------------------------------
 
-unlookupArr arr n eq = X $ either id undefined $ foldM unlookup' 0 [0..n] where 
+--find the index (wrapped as a GroupElement) of a value
+--this could probably be improved with a Map
+unlookupArr :: Eq a => Array Int a -> a -> GroupElement
+unlookupArr arr eq = X $ either id undefined $ foldM unlookup' 0 $ indices arr where 
   unlookup' _ x = if (arr!x == eq) then Left x else Right (x+1)
 
 --pair of array containing every permutation of order n and
 --getter function which obtains a permutation's corresponding algebra element
-toFromSym n    = (lookup, unlookupArr lookup order) where
+toFromSym :: Int -> (Array Int [Int], [Int] -> GroupElement)
+toFromSym n    = (lookup, unlookupArr lookup) where
   order        = product [1..n] - 1
   lookup       = listArray (0, order) $ permutation n
 
-toFromPerm xs = (lookup, unlookupArr lookup (length lookup)) where
+--generatingTable with a getter
+--same pair as for `toFromSym`, but uses `Perm` rather than [Int] since the
+--lengths of the underlying lists are not regularized
+toFromPerm :: [Perm] -> (Array Int Perm, Perm -> GroupElement)
+toFromPerm xs = (lookup, unlookupArr lookup) where
   lookup = generatingTable xs
 
+symmetricTable' :: Int -> (Array Int [Int], [Int] -> GroupElement, CayleyTable GroupElement)
 symmetricTable' n = (lookup, unlookup, products) where
   (lookup, unlookup)     = toFromSym n
   order                  = snd $ bounds lookup
@@ -139,8 +175,12 @@ symmetricTable' n = (lookup, unlookup, products) where
   products               = array idx $ map (uncurry applyLookup) $ range idx
 
 --symmetric group of order n cayley table
+symmetricTable :: Int -> CayleyTable GroupElement
 symmetricTable = (\(_,_,cayley) -> cayley) . symmetricTable'
 
 --convert permutation to purely algebraic representation in S_n
+toAlgebra' :: ([Int] -> GroupElement) -> Int -> [Perm] -> [GroupElement]
 toAlgebra' from n = nub . map (from . unPerm . (Perm [1..n] <>))
-toAlgebra n = let (_, from) = toFromSym n in toAlgebra' from n
+
+toAlgebra :: Int -> [Perm] -> [GroupElement]
+toAlgebra n = toAlgebra' (snd $ toFromSym n) n

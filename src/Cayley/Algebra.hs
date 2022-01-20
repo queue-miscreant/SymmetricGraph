@@ -1,4 +1,4 @@
-module Algebra where
+module Cayley.Algebra where
 --abstract algebra types: cayley tables, group elements, ring elements (as dynamic arrays)
 
 import Data.Array
@@ -53,7 +53,8 @@ instance Read GroupElement where
 instance Multiplication GroupElement where 
   times cay (X a) (X b) = cay!(a,b)
 
-cayleyTGroup = buildCayleyT (X 0) X
+groupCayleyT :: [CayleyEntry GroupElement] -> CayleyTable GroupElement
+groupCayleyT = buildCayleyT (X 0) X
 
 --RINGLIKE----------------------------------------------------------------------
 
@@ -61,13 +62,15 @@ cayleyTGroup = buildCayleyT (X 0) X
 --c 0 is assumed to be the multiplicative identity
 data AlgebraElement a = Alg {unAlg :: Array Int a}
 
+--1*C_n, where C_n is an abstract element of a ring
 c :: Num a => Int -> AlgebraElement a
 c n = Alg $ array (0,n) $ (n,1):(zip [0..] $ replicate n 0)
 
+--zero element of a certain length
 z :: Num a => Int -> AlgebraElement a
 z n = Alg $ listArray (0, n+1) $ repeat 0
 
---ringlike addition and multiplication
+--combine two AlgebraElements, picking the longer as the new size
 liftAlg :: Num a => (a -> a -> a) -> AlgebraElement a -> AlgebraElement a 
   -> AlgebraElement a
 liftAlg f (Alg a) (Alg b)
@@ -77,6 +80,7 @@ liftAlg f (Alg a) (Alg b)
     ab = snd $ bounds a
     bb = snd $ bounds b
 
+--ringlike addition and multiplication
 (.+) :: Num a => AlgebraElement a -> AlgebraElement a -> AlgebraElement a
 (.+) = liftAlg (+)
 
@@ -88,7 +92,8 @@ liftAlg f (Alg a) (Alg b)
   | inRange (bounds a) n = a!n
   | otherwise            = 0
 
-cayleyTRing = buildCayleyT (z 0) c
+ringCayleyT :: Num a => [CayleyEntry (AlgebraElement a)] -> CayleyTable (AlgebraElement a)
+ringCayleyT = buildCayleyT (z 0) c
 
 infixl 6 .+
 infixl 7 .*
