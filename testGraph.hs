@@ -9,7 +9,7 @@ import GraphAlg
 import System.Process
 import System.Posix.Signals
 
-tet   = k 4
+tet   = kG 4
 
 -- cube = crown 4
 cube  = fromWordList ["bcd", 
@@ -55,16 +55,31 @@ showGraphS   g = "import networkx as nx \n\
                  \nx.draw(g) \n\
                  \plt.show()"
 
+showDigraphS g = "import networkx as nx \n\
+                 \import matplotlib.pyplot as plt \n\
+                 \g = nx.DiGraph() \n\
+                 \g.add_edges_from(" ++ (show $ toDirEdgeList g) ++ ") \n\
+                 \nx.draw(g) \n\
+                 \plt.show()"
+
+showSpecS    g = "import networkx as nx \n\
+                 \from compute_spectrum import mult_spectrum\n\
+                 \g = nx.Graph() \n\
+                 \g.add_edges_from(" ++ (show $ toEdgeList g) ++ ") \n\
+                 \[print(i,j) for i,j in mult_spectrum(g).items()]"
+
 runPython script = do hand <- spawnProcess "python" ["-c", script]
                       _ <- waitForProcess hand
                       return ()
 
 showGraph = runPython . showGraphS
+showDigraph = runPython . showDigraphS
+showSpec  = runPython . showSpecS
 
 pseudoReplS  g = "import networkx as nx \n\
                  \import sympy \n\
                  \import matplotlib.pyplot as plt \n\
-                 \from compute_spectrum import mult_spectrum\n\
+                 \from compute_spectrum import *\n\
                  \g = nx.Graph() \n\
                  \g.add_edges_from(" ++ (show $ toEdgeList g) ++ ")"
 

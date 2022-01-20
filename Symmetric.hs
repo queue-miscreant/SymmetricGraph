@@ -3,6 +3,7 @@
 module Symmetric where
 
 import Data.List
+import Data.Graph
 import Data.Array
 import Data.Array.ST
 
@@ -12,59 +13,83 @@ import Control.Monad (foldM)
 
 import Algebra
 import Graph
-import GraphAlg
 
---all permutations of the set [1..x]
---plain changes without the reversing
-{-
-permutation x = permute [1..x] where
-  permute [x]    = [[x]]
-  permute (x:xs) = concat [reinsert x p | p <- permute xs]
-  reinsert y ys  = [(\(a,b) c -> a ++ (c:b)) (splitAt z ys) y | z <- [0..(length ys)]]
--}
-
+--enumerate all permutations of order n by plain changes
 --TODO: better?
 plainChanges n = change n where 
   change 1 = [[1]]
   change n = concat $ zipWith (drag n) (cycle [reverse, id]) $ change $ n-1
   drag n f x  = f [let (a,b) = splitAt m x in a ++ (n:b) | m <- [0..n-1]]
-permutation n = permutations [1..n]
---permutation = plainChanges
+--permutation n = permutations [1..n]
+permutation = plainChanges
 
+applyOne xs = ((xs !!) . (+(-1)))
 --apply one permutation over another (1-based)
 --since the symmetric group grows so quickly, efficiency can be disregarded
-apply xs = map ((xs !!) . (+(-1)))
+apply xs = map (applyOne xs)
 
 data Perm = Perm {unPerm :: [Int]} --not deriving eq, since it can be difficult to tell
 
-instance Semigroup Perm where
-  (<>) (Perm xs) (Perm ys) = Perm $ case lxs `compare` lys of {
-    GT -> apply xs $ ys ++ [lys + 1..lxs];
-    LT -> apply (xs ++ [lxs + 1..lys]) ys;
-    EQ -> apply xs ys;
-  } where lxs = length xs
-          lys = length ys
+inverse' (Perm xs) = Perm $ map ((+1) . fromJust . (`findIndex` xs) . (==)) [1..length xs]
 
-app a b = show $ (read a <> read b :: Perm)
+symmetric = map Perm . permutation
+
+derivedGroup ps = nubBy (\x y -> unPerm x == unPerm y) [a <> (b <> (inverse a <> inverse b)) | a <- ps, b <- ps] 
+
+--alternating group 
+alternating = derivedGroup . symmetric
+
+--extract a list of cycles from a Perm object
+extractCycles (Perm xs) = extractCycles' Data.Set.empty 1 where 
+  navCycle n xs = n:(takeWhile (/=n) $ tail $ iterate (applyOne xs) n)
+  lx = length xs
+  extractCycles' mask n 
+    | n >= lx   = []
+    | length exhaust == 1 = extractCycles' newMask next 
+    | otherwise           = exhaust:extractCycles' newMask next where 
+        exhaust = navCycle n xs
+        newMask = (Data.Set.fromList exhaust) `Data.Set.union` mask
+        next    = head $ dropWhile (`Data.Set.member` newMask) [n..]
+
+--build a permutation from a list of (reversed) cycles
+--for example, permFromCycles [[1,2,3]] = (3 2 1) rather than (1 2 3)
+permFromRevCycles = Perm . buildList where
+  --build result
+  buildList [] = [1]
+  buildList xs = foldl (flip $ \(y:ys) -> applyCycle y (y:ys)) [1..maximum (map maximum xs)] xs
+  --x1 tells us where x2 should go
+  applyCycle x2 [x1] ys = rejoin x1 $ splitAt (x2 - 1) ys
+  applyCycle s (x1:x2:xs) ys = applyCycle s (x2:xs) $ rejoin x1 $ splitAt (x2 - 1) ys
+  rejoin n (xs, ys) = xs ++ n:tail ys
+
+inverse = permFromRevCycles . extractCycles
+
+--normalize lengths to the longer of two lists
+normalizePair xs ys = case lx `compare` ly of {
+    GT -> (xs, ys ++ [ly+1..lx]);
+    LT -> ((xs ++ [lx+1..ly]), ys);
+    EQ -> (xs, ys);
+  } where lx = length xs
+          ly = length ys
+
+instance Semigroup Perm where
+  (<>) (Perm xs) (Perm ys) = Perm $ (uncurry apply) $ normalizePair xs ys 
+
+instance Monoid Perm where
+  mempty = Perm [1,2]
+
+instance Eq Perm where 
+  (==) (Perm xs) (Perm ys) = uncurry (==) $ normalizePair xs ys
 
 --show permutation in cycle notation
---TODO: move the code to convert to/from cycle notation to their own functions
 instance Show Perm where
-  show (Perm xs) = showPerm' Data.Set.empty 1 xs
-    where showPerm' ss n xs 
-              | n >= lx   = ""
-              | length exhaust == 1 = next
-              | otherwise = '(':(intercalate "," $ map show exhaust) ++ ")" ++ next
-            where exhaust = navCycle n xs
-                  ss'     = (Data.Set.fromList exhaust) `Data.Set.union` ss
-                  next    = showPerm' ss' (head $ dropWhile (`Data.Set.member` ss') [n..]) xs
-          navCycle n xs = n:(takeWhile (/=n) $ tail $ iterate ((xs !!) . (+(-1))) n)
-          lx = length xs
+  show x = (concat . mapM showCycle (extractCycles x)) "" where 
+    showCycle x = showParen (length x > 1) ((intercalate "," $ map show x)++)
 
 --read cycle notation
 --this is abjectly terrible, but it gets the job done
 instance Read Perm where
-  readsPrec _ = (\a -> [(a, "")]) . Perm . buildList . parseCycle []
+  readsPrec _ = (\a -> [(a, "")]) . permFromRevCycles . parseCycle []
     where parseCycle [] "" = []
           parseCycle ds "" = [ds]
           parseCycle ds (s:ss)
@@ -73,36 +98,39 @@ instance Read Perm where
             | otherwise    = convert ds $ break notInt (s:ss)
           notInt = not . (`elem` ['0'..'9'])
           convert ds (x,y) = parseCycle ((read x :: Int):ds) $ dropWhile (\x -> notInt x && x /= ')') y
-          --x1 tells us where x2 should go
-          applyCycle x2 [x1] ys = rejoin x1 $ splitAt (x2 - 1) ys
-          applyCycle s (x1:x2:xs) ys = applyCycle s (x2:xs) $ rejoin x1 $ splitAt (x2 - 1) ys
-          rejoin n (xs, ys) = xs ++ n:tail ys
-          --build result
-          buildList [] = [1]
-          buildList xs = foldl (flip $ \(y:ys) -> applyCycle y (y:ys)) [1..maximum (map maximum xs)] xs
 
---graph to list of two cycles
-graphSwaps :: Graph -> [Perm]
-graphSwaps (G a) = map (read . show) swaps where 
-  ab         = snd $ bounds a
-  swaps      = assocs a >>= (\(x, ys) -> map ((,) (x+1) . (+1)) ys)
+--apply a string of cycles over another string of cycles
+--effectively lifts `apply` to strings of cycles
+app a b = show $ (read a <> read b :: Perm)
 
-inverse (Perm xs) = Perm $ map ((+1) . fromJust . (`findIndex` xs) . (==)) [1..length xs]
+--run generating set `xs`, producing all members of a subgroup
+generatingSet xs = fixList xs xs where 
+  fixList ss ys
+    | ss == ss' = ss' 
+    | otherwise = fixList ss' advance where 
+        ss'     = ss `union` advance
+        advance = nub $ (<>) <$> xs <*> ys 
 
-evenperms n = nubBy (\x y -> unPerm x == unPerm y) $ [a <> (b <> (inverse a <> inverse b)) | a <- p n, b <- p n] where
-  p = map Perm . permutation
+generatingTable xs = listArray (0,n-1) $ (Perm [1,2]):noId gset where
+  n = length gset
+  gset = generatingSet xs
+  noId = filter (/= mempty)
 
 --ALGEBRAIC OPERATIONS----------------------------------------------------------
 
+unlookupArr arr n eq = X $ either id undefined $ foldM unlookup' 0 [0..n] where 
+  unlookup' _ x = if (arr!x == eq) then Left x else Right (x+1)
+
 --pair of array containing every permutation of order n and
 --getter function which obtains a permutation's corresponding algebra element
-toFromSym n    = (lookup, unlookup) where
+toFromSym n    = (lookup, unlookupArr lookup order) where
   order        = product [1..n] - 1
   lookup       = listArray (0, order) $ permutation n
-  unlookup' eq = foldM (\_ x -> if (lookup!x == eq) then Left x else Right (x+1)) 0 [0..order]
-  unlookup     = X . either id undefined . unlookup'
 
-symmetric' n = (lookup, unlookup, products) where
+toFromPerm xs = (lookup, unlookupArr lookup (length lookup)) where
+  lookup = generatingTable xs
+
+symmetricTable' n = (lookup, unlookup, products) where
   (lookup, unlookup)     = toFromSym n
   order                  = snd $ bounds lookup
   idx                    = ((0,0),(order,order))
@@ -111,22 +139,8 @@ symmetric' n = (lookup, unlookup, products) where
   products               = array idx $ map (uncurry applyLookup) $ range idx
 
 --symmetric group of order n cayley table
-symmetric = (\(_,_,cayley) -> cayley) . symmetric'
-
---symmetric groups grow so rapidly that storing the cayley table is infeasible
-symmetricCayleyG n = cayleyGraph' algebra (product [1..n]) . toAlgebra' unlookup n where
-  (!lookup, unlookup)     = toFromSym n
-  algebra (X el1) (X el2) = unlookup $ unPerm $ (Perm $ lookup!el2) <> (Perm $ lookup!el1)
+symmetricTable = (\(_,_,cayley) -> cayley) . symmetricTable'
 
 --convert permutation to purely algebraic representation in S_n
 toAlgebra' from n = nub . map (from . unPerm . (Perm [1..n] <>))
 toAlgebra n = let (_, from) = toFromSym n in toAlgebra' from n
-
---derived cayley graph on symmetric group from a "swap" graph
---beware that 8 nodes is too many!
-factorialG g@(G a) = symmetricCayleyG (ab+1) generators where
-  !generators = graphSwaps g 
-  ab          = snd $ bounds a
-
---number of nodes who share a distance from the identity
-factorialClasses = map length . flip neighbors 0 . factorialG

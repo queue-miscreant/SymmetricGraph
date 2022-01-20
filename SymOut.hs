@@ -1,18 +1,19 @@
 {-# LANGUAGE BangPatterns #-}
 module SymOut where
 
-import Symmetric
-import Algebra
-import Graph
-
-import Data.Array
 import Data.List
+import Data.Graph
+import Data.Array
 
 import Control.Monad
 import System.Environment
 
 import Codec.Picture
 import Codec.Picture.Types
+
+import Symmetric
+import Algebra
+import Graph
 
 heatmapI' arr = (uncurry $ generateImage (curry (arr!))) $ snd $ bounds arr
 
@@ -27,12 +28,10 @@ heatmapGI g = generateImage edgeBetween' graphSize graphSize where
   graphSize    = numNodes g
   edgeBetween' = ((\x -> if x then 255 else 0) .) . edgeBetween g
 
-{-
 writeStages n = [writePng (show x ++ ".png") $ heatmapGI $ cayleyGraph sym y | (x,y) <- (zip [0..] $ inits (allTwos n))] where
   sym = seq 0 (symmetric n)
--}
 
-knownGraphs = [("k", k), ("star", star), ("path", path)]
+knownGraphs = [("k", kG), ("star", starG), ("path", pathG)]
 
 writeEdges = do (graph:order:_) <- getArgs
                 let g = maybe (error "Could not find graph") id $ (lookup graph knownGraphs)
