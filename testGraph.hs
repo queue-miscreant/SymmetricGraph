@@ -1,10 +1,10 @@
 --some assorted graphs, with functions for starting up a Python
 --environment with networkx loaded
 
-import Algebra
-import Symmetric
-import Graph
-import GraphAlg
+import Cayley.Algebra
+import Cayley.Symmetric
+import Cayley.Graph
+import Cayley.GraphAlg
 
 import System.Process
 import System.Posix.Signals
