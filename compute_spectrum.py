@@ -7,6 +7,10 @@ import sys
 import timeit
 
 def spectrum_to_mults(spec, tol=1e-14):
+	"""
+	Convert spectrum array to a dict, with eigenvalues as indices and
+	multiplicities as entries.
+	"""
 	ret = {}
 	for eig in spec:
 		stop = False
@@ -19,23 +23,28 @@ def spectrum_to_mults(spec, tol=1e-14):
 			ret[eig] = 1
 	return ret
 
+# You'd think that a sensible graph theory library would use optimal eigenvalue 
+# algorithms....
 def mult_spectrum_naive(g, tol=1e-7):
+	"""
+	Compute eigenvalue dict of graph
+	"""
 	return spectrum_to_mults(nx.spectrum.adjacency_spectrum(g), tol)
 
+# But the method above doesn't take into account the undirectedness of the graph
+# (and hence, the symmetricity of its adjacency matrix)
 def mult_spectrum(g, tol=1e-7):
-	spectrum = linalg.eigh(nx.adjacency_matrix(g).todense(), eigvals_only=True, check_finite=False)
+	"""Compute eigenvalue dict of undirected graph, using scipy.eigh"""
+	spectrum = linalg.eigh(nx.adjacency_matrix(g).todense()
+		, eigvals_only=True, check_finite=False)
 	return spectrum_to_mults(spectrum, tol)
 
-def kernel_dim(g, tol=1e-7):
-	return len( linalg.eigh(nx.adjacency_matrix(g).todense(), 
-							eigvals_only=True, 
-							check_finite=False, 
-							subset_by_value=[-tol,tol]) )
-
 def load_graph(path):
+	"""Read a file containing a python list of edges into a NetworkX graph"""
 	g = nx.Graph()
 	with open(path) as a:
-		#no, I don't care how ill advised this is
+		# fortunately, Haskell and Python both have the same syntax for lists
+		# No, I don't care how ill-advised this is
 		g.add_edges_from(eval(a.readline()))
 	return g
 	

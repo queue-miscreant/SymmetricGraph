@@ -141,14 +141,17 @@ residues classes = listArray ((0,0),(n-1,n-1)) . concat . map (map (biplus . div
   divMods xs    = unzip $ map (\x -> asAlg x $ (ns!x) (xs.!x) ) [0..n-1]
   biplus (x,y)  = (mconcat x, mconcat y)
 
+residuesG :: Graph -> Array (Int, Int) (AlgebraElement Int, AlgebraElement Int)
 residuesG = uncurry residues . eachOfClass'
 
 -- create cayley table based on neighbor classes
 -- this is only valid for certain on general platonic graphs -- i.e., those which 
 -- represent an n-dimensional regular figure
-flowAlg gr = fmap fst . residuesG
+flowAlg :: Graph -> CayleyTable (AlgebraElement Int)
+flowAlg = fmap fst . residuesG
 
 -- flowAlg, but which returns Nothing if there is no algebra
+maybeFlowAlg :: Graph -> Maybe (CayleyTable (AlgebraElement Int))
 maybeFlowAlg gr
   | residueSum == 0 = Just $ fmap fst res
   | otherwise       = Nothing where

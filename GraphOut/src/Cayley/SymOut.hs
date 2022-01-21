@@ -15,6 +15,8 @@ import Cayley.Graph
 import Cayley.Symmetric
 import Cayley.GraphAlg
 
+import Cayley.Examples
+
 
 knownGraphs = [("k", kG), ("star", starG), ("path", pathG)]
 

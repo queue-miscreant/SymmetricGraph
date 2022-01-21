@@ -19,10 +19,11 @@ maintainer:         cubebert549@gmail.com
 -- A copyright notice.
 -- copyright:
 -- category:
-extra-source-files: CHANGELOG.md
 
 library
-    exposed-modules:  Cayley.SymOut
+    exposed-modules:
+        Cayley.SymOut
+        PythonNX
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -33,6 +34,8 @@ library
         base ^>=4.15.0.0,
         containers ^>=0.6.4.1,
         array ^>=0.5.4.0,
+        process ^>=1.6.11.0,
+        unix ^>=2.7.2.2,
         JuicyPixels ^>=3.3.6,
         CayleyOps >= 0.1.0
     hs-source-dirs:   .,src
